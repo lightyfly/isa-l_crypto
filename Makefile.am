@@ -2,10 +2,10 @@ EXTRA_DIST = autogen.sh Makefile.unx make.inc Makefile.nmake isa-l_crypto.def LI
 CLEANFILES =
 LDADD =
 AM_MAKEFLAGS = --no-print-directory
-noinst_HEADERS =
-pkginclude_HEADERS = include/test.h include/types.h include/endian_helper.h
+noinst_HEADERS = include/internal/test.h include/internal/endian_helper.h
+pkginclude_HEADERS = include/isa-l_crypto/types.h
 noinst_LTLIBRARIES =
-INCLUDE = -I $(srcdir)/include/
+INCLUDE = -I $(srcdir)/include -I $(srcdir)/include/isa-l_crypto -I $(srcdir)/include/internal
 
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = libisal_crypto.pc
@@ -25,8 +25,8 @@ examples=
 other_tests=
 lsrc32=
 lsrc_x86_64=
-lsrc_x86_32=
 lsrc_aarch64=
+lsrc_riscv64=
 lsrc_base_aliases=
 unit_tests32=
 perf_tests32=
@@ -41,19 +41,18 @@ include mh_sha1_murmur3_x64_128/Makefile.am
 include mh_sha256/Makefile.am
 include rolling_hash/Makefile.am
 include sm3_mb/Makefile.am
+include misc/Makefile.am
 if CPU_X86_64
-include aes/Makefile.am
-endif
-if CPU_X86_32
 include aes/Makefile.am
 endif
 if CPU_AARCH64
 include aes/Makefile.am
 endif
+include fips/Makefile.am
 
 # LIB version info not necessarily the same as package version
 LIBISAL_CURRENT=2
-LIBISAL_REVISION=24
+LIBISAL_REVISION=26
 LIBISAL_AGE=0
 
 lib_LTLIBRARIES = libisal_crypto.la
@@ -63,12 +62,12 @@ if CPU_X86_64
 libisal_crypto_la_SOURCES += ${lsrc_x86_64}
 endif
 
-if CPU_X86_32
-libisal_crypto_la_SOURCES += ${lsrc_x86_32}
-endif
-
 if CPU_AARCH64
 libisal_crypto_la_SOURCES += ${lsrc_aarch64}
+endif
+
+if CPU_RISCV64
+libisal_crypto_la_SOURCES += ${lsrc_riscv64}
 endif
 
 if CPU_UNDEFINED
@@ -108,31 +107,28 @@ test: $(addsuffix .run,$(unit_tests))
 	$<
 	@echo Completed run: $<
 
-# Support for yasm/nasm
-if USE_YASM
-  as_filter = ${srcdir}/tools/yasm-filter.sh
-endif
+# Support for nasm
 if USE_NASM
   as_filter = ${srcdir}/tools/nasm-filter.sh
 endif
 if CPU_AARCH64
   as_filter = $(CC) -D__ASSEMBLY__
 endif
-CCAS = $(as_filter)
-EXTRA_DIST += tools/yasm-filter.sh tools/nasm-filter.sh
-EXTRA_DIST += tools/yasm-cet-filter.sh tools/nasm-cet-filter.sh
-
-if SAFE_DATA
-SAFE_OPTS = -DSAFE_DATA
-else
-SAFE_OPTS =
+if CPU_RISCV64
+  as_filter = $(CC) -D__ASSEMBLY__
 endif
+CCAS = $(as_filter)
+EXTRA_DIST += tools/nasm-filter.sh
+EXTRA_DIST += tools/nasm-cet-filter.sh
 
 AM_CFLAGS = ${my_CFLAGS} ${INCLUDE} $(src_include) ${D}
 if CPU_AARCH64
-AM_CCASFLAGS = ${yasm_args} ${INCLUDE} $(src_include) ${D}
+AM_CCASFLAGS = ${asm_args} ${INCLUDE} $(src_include) ${D}
 else
-AM_CCASFLAGS = ${yasm_args} ${INCLUDE} $(src_include) ${DEFS} ${D} ${SAFE_OPTS}
+AM_CCASFLAGS = ${asm_args} ${INCLUDE} $(src_include) ${DEFS} ${D}
+endif
+if CPU_RISCV64
+AM_CCASFLAGS = ${asm_args} ${INCLUDE} $(src_include) ${D}
 endif
 
 .asm.s:
@@ -153,13 +149,7 @@ isa-l_crypto.h:
 	@echo '#ifndef _ISAL_CRYPTO_H_'	>> $@
 	@echo '#define _ISAL_CRYPTO_H_'	>> $@
 	@echo ''			>> $@
-	@echo '#define.ISAL_CRYPTO_MAJOR_VERSION.${VERSION}' |  ${AWK} -F . '{print $$1, $$2, $$3}' >> $@
-	@echo '#define.ISAL_CRYPTO_MINOR_VERSION.${VERSION}' |  ${AWK} -F . '{print $$1, $$2, $$4}' >> $@
-	@echo '#define.ISAL_CRYPTO_PATCH_VERSION.${VERSION}' |  ${AWK} -F . '{print $$1, $$2, $$5}' >> $@
-	@echo '#define ISAL_CRYPTO_MAKE_VERSION(maj, min, patch)  ((maj) * 0x10000 + (min) * 0x100 + (patch))' >> $@
-	@echo '#define ISAL_CRYPTO_VERSION ISAL_CRYPTO_MAKE_VERSION(ISAL_CRYPTO_MAJOR_VERSION, ISAL_CRYPTO_MINOR_VERSION, ISAL_CRYPTO_PATCH_VERSION)' >> $@
-	@echo ''			>> $@
-	@for unit in $(sort $(extern_hdrs)); do echo "#include <isa-l_crypto/$$unit>" | sed -e 's;include/;;' >> $@; done
+	@for unit in $(sort $(extern_hdrs)); do echo "#include <$$unit>" | sed -e 's;include/;;' >> $@; done
 	@echo '#endif //_ISAL_CRYPTO_H_'	>> $@
 
 doc: isa-l_crypto.h

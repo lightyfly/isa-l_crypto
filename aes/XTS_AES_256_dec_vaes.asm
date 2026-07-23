@@ -36,8 +36,6 @@
 %include "reg_sizes.asm"
 %include "clear_regs.inc"
 
-%if (AS_FEATURE_LEVEL) >= 10
-
 default rel
 %define TW              rsp     ; store 8 tweak values
 %define keys    rsp + 16*8      ; store 15 expanded keys
@@ -57,9 +55,9 @@ default rel
 %define GHASH_POLY 0x87
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;void XTS_AES_256_enc_avx(
+;void _XTS_AES_256_dec_vaes(
 ;               UINT8 *k2,      // key used for tweaking, 16*2 bytes
-;               UINT8 *k1,      // key used for "ECB" encryption, 16*2 bytes
+;               UINT8 *k1,      // key used for "ECB" decryption, 16*2 bytes
 ;               UINT8 *TW_initial,      // initial tweak value, 16 bytes
 ;               UINT64 N,       // sector size, in bytes
 ;               const UINT8 *pt,        // plaintext sector input data
@@ -1147,8 +1145,8 @@ default rel
 
 section .text
 
-mk_global XTS_AES_256_dec_vaes, function
-XTS_AES_256_dec_vaes:
+mk_global _XTS_AES_256_dec_vaes, function, internal
+_XTS_AES_256_dec_vaes:
 	endbranch
 
 %define ALIGN_STACK
@@ -1405,7 +1403,7 @@ _done_1_remain:
 
 
 _start_by16:
-	; Make first 7 tweek values
+	; Make first 7 tweak values
 	vbroadcasti32x4	zmm0, [TW]
 	vbroadcasti32x4	zmm8, [shufb_15_7]
 	mov		tmp1, 0xaa
@@ -1426,7 +1424,7 @@ _start_by16:
 	vpxorq		zmm5 {k2}, zmm5, zmm6		; tweaks shifted by 7-4
 	vpxord		zmm10, zmm7, zmm5
 
-	; Make next 8 tweek values by all x 2^8
+	; Make next 8 tweak values by all x 2^8
 	vpsrldq		zmm13, zmm9, 15
 	vpclmulqdq	zmm14, zmm13, zpoly, 0
 	vpslldq		zmm11, zmm9, 1
@@ -1462,7 +1460,7 @@ _main_loop_run_16:
 	jmp		_do_n_blocks
 
 _start_by8:
-	; Make first 7 tweek values
+	; Make first 7 tweak values
 	vbroadcasti32x4	zmm0, [TW]
 	vbroadcasti32x4	zmm8, [shufb_15_7]
 	mov		tmp1, 0xaa
@@ -1551,6 +1549,12 @@ _done:
 _ret_:
 %ifdef SAFE_DATA
         clear_all_zmms_asm
+        ; Clear expanded keys (16*15 bytes)
+        vmovdqa64       [keys], zmm0
+        vmovdqa64       [keys + 4*16], zmm0
+        vmovdqa64       [keys + 8*16], zmm0
+        vmovdqa64       [keys + 12*16], ymm0
+        vmovdqa64       [keys + 14*16], xmm0
 %else
         vzeroupper
 %endif
@@ -1878,10 +1882,3 @@ const_dq7654: dq 4, 4, 5, 5, 6, 6, 7, 7
 const_dq1234: dq 4, 4, 3, 3, 2, 2, 1, 1
 
 shufb_15_7: db 15, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 7, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
-
-%else  ; Assembler doesn't understand these opcodes. Add empty symbol for windows.
-%ifidn __OUTPUT_FORMAT__, win64
-global no_XTS_AES_256_dec_vaes
-no_XTS_AES_256_dec_vaes:
-%endif
-%endif ; (AS_FEATURE_LEVEL) >= 10

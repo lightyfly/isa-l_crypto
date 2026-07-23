@@ -39,28 +39,22 @@
 #	trace - get simulator trace
 #	clean - remove object files
 
-version ?= 2.24.0
+version ?= 2.26.1
 
 
 
-CC  = gcc
+CC  ?= gcc
 AS  = nasm
 AWK = awk
 
 DEBUG      = -g
-DEBUG_yasm = -g dwarf2
 DEBUG_nasm = -g
 
 # Default arch= build options
-CFLAGS_    = -Wall
+CFLAGS_    = -Wall -Wchar-subscripts -Wformat-security -Wnested-externs -Wpointer-arith -Wshadow -Wstrict-prototypes -Wtype-limits -fstack-protector -D_FORTIFY_SOURCE=2 -DNO_COMPAT_ISAL_CRYPTO_API_2_24
 ASFLAGS_   = -f elf64
 ARFLAGS_   = cr $@
 STRIP_gcc  = strip -d -R .comment $@
-
-# arch=32 build options
-ASFLAGS_32 = -f elf32
-CFLAGS_32  = -m32
-ARFLAGS_32 = cr $@
 
 # arch=win64 build options
 ASFLAGS_win64 = -f win64
@@ -72,6 +66,14 @@ ASFLAGS_mingw = -f win64
 ARFLAGS_mingw = cr $@
 
 LDFLAGS_so = -Wl,-z,noexecstack -Wl,-z,relro -Wl,-z,now -Wl,-soname,$(soname)
+
+ifeq ($(shell uname),Linux)
+ifeq ($(host_cpu),x86_64)
+  CFLAGS_ += -fcf-protection=full
+  ASFLAGS_ += -DINTEL_CET_ENABLED
+  LDFLAGS += -Wl,-z,ibt -Wl,-z,shstk -Wl,-z,cet-report=error
+endif
+endif
 
 ifeq ($(arch),mingw)
   CC=x86_64-w64-mingw32-gcc
@@ -107,7 +109,7 @@ CFLAGS_noarch= -DNOARCH
 ifeq ($(arch),noarch)
   host_cpu=base_aliases
 endif
-INCLUDE   = $(patsubst %,-I%/,$(subst :, ,$(VPATH)))
+INCLUDE   = $(patsubst %,-I%/,$(subst :, ,$(VPATH))) -Iinclude/ -Iinclude/isa-l_crypto/ -Iinclude/internal/
 CFLAGS   = $(CFLAGS_$(arch)) $(CFLAGS_$(CC)) $(DEBUG) -O2 $(DEFINES) $(INCLUDE)
 ASFLAGS  = $(ASFLAGS_$(arch)) $(ASFLAGS_$(CC)) $(DEBUG_$(AS)) $(DEFINES) $(INCLUDE)
 ARFLAGS  = $(ARFLAGS_$(arch))
@@ -118,6 +120,65 @@ ifneq ($(SAFE_DATA),n)
 CFLAGS += -DSAFE_DATA
 ASFLAGS += -DSAFE_DATA
 endif
+
+ifneq ($(SAFE_PARAM),n)
+CFLAGS += -DSAFE_PARAM
+ASFLAGS += -DSAFE_PARAM
+endif
+
+ifeq ($(FIPS_MODE),y)
+CFLAGS += -DFIPS_MODE
+ASFLAGS += -DFIPS_MODE
+endif
+
+ifneq ($(filter x86_%,$(host_cpu)),)
+# Detect NASM version (minimum required: 2.14.01)
+MINGW ?= $(shell $(CC) -dM -E - < /dev/null | grep -i mingw | wc -l | sed 's/^ *//')
+ifeq ($(MINGW),0)
+MULT = \*
+else
+MULT = \\*
+endif
+
+NASM_VERSION = $(shell $(AS) -v | cut -d " " -f 3)
+
+NASM_MAJOR_REQ = 2
+NASM_MINOR_REQ = 14
+NASM_REV_REQ   = 01
+NASM_MIN_REQ = $(shell expr $(NASM_MAJOR_REQ) $(MULT) 10000 + $(NASM_MINOR_REQ) $(MULT) 100 + $(NASM_REV_REQ))
+
+ifeq ($(NASM_VERSION),)
+$(error NASM is not installed! Minimum required version: $(NASM_MAJOR_REQ).$(NASM_MINOR_REQ).$(NASM_REV_REQ))
+else
+NASM_MAJOR_VER = $(shell echo $(NASM_VERSION) | cut -d "." -f 1)
+NASM_MINOR_VER = $(shell echo $(NASM_VERSION) | cut -d "." -f 2 | cut -c 1-2)
+NASM_REV_VER   = $(shell echo $(NASM_VERSION) | cut -d "." -f 3 | cut -c 1-2)
+ifeq ($(NASM_REV_VER),)
+NASM_REV_VER = 0
+endif
+NASM_VER = $(shell expr $(NASM_MAJOR_VER) $(MULT) 10000 + $(NASM_MINOR_VER) $(MULT) 100 + $(NASM_REV_VER))
+
+NASM_GE_REQ = $(shell [ $(NASM_VER) -ge $(NASM_MIN_REQ) ] && echo true)
+$(info NASM '$(AS)' version: $(NASM_VERSION))
+ifneq ($(NASM_GE_REQ),true)
+$(error Minimum required NASM version: $(NASM_MAJOR_REQ).$(NASM_MINOR_REQ).$(NASM_REV_REQ))
+endif # NASM_GE_REQ
+
+# Minimum version of NASM with SHA512-NI support: 2.16.02
+NASM_MAJOR_SHA512NI = 2
+NASM_MINOR_SHA512NI = 16
+NASM_REV_SHA512NI   = 02
+NASM_MIN_SHA512NI = $(shell expr $(NASM_MAJOR_SHA512NI) $(MULT) 10000 + $(NASM_MINOR_SHA512NI) $(MULT) 100 + $(NASM_REV_SHA512NI))
+
+NASM_SHA512NI_GE_REQ = $(shell [ $(NASM_VER) -ge $(NASM_MIN_SHA512NI) ] && echo true)
+ifneq ($(NASM_SHA512NI_GE_REQ),true)
+$(warning Minimum required NASM version for SHA512-NI: $(NASM_MAJOR_SHA512NI).$(NASM_MINOR_SHA512NI).$(NASM_REV_SHA512NI) SHA512-NI code not compiled - update NASM.)
+else
+CFLAGS  += -DHAVE_AS_KNOWS_SHA512NI
+ASFLAGS += -DHAVE_AS_KNOWS_SHA512NI
+endif # NASM_SHA512NI_GE_REQ
+endif # NASM_VERSION
+endif # x86
 
 ifeq ($(filter aarch64 x86_%,$(host_cpu)),)
   host_cpu=base_aliases
@@ -163,17 +224,7 @@ as_6  := "vinserti32x8 zmm0, ymm1, 1;"
 as_10 := "vpcompressb zmm0 {k1}, zmm1;"
 
 tmpf := $(shell mktemp)
-as_feature_level := $(call test-as, 4,  $(tmpf), $(as_4),  $(as_feature_level))
-as_feature_level := $(call test-as, 6,  $(tmpf), $(as_6),  $(as_feature_level))
-as_feature_level := $(call test-as, 10, $(tmpf), $(as_10), $(as_feature_level))
 tmpf := $(shell rm ${tmpf})
-
-ifneq ($(findstring $(as_feature_level),6 10),)
-  D_HAVE_AS_KNOWS_AVX512_y := -DHAVE_AS_KNOWS_AVX512
-endif
-
-CFLAGS  += -DAS_FEATURE_LEVEL=$(as_feature_level) $(D_HAVE_AS_KNOWS_AVX512_y)
-ASFLAGS += -DAS_FEATURE_LEVEL=$(as_feature_level) $(D_HAVE_AS_KNOWS_AVX512_y)
 
 sim test trace: $(addsuffix .run,$(all_unit_tests))
 perf: $(addsuffix .run,$(all_perf_tests))
@@ -208,13 +259,13 @@ $(O)/%.o: $(host_cpu)/%.S
 $(O)/%.o   : $(host_cpu)/%.c
 	@echo "  ---> Building $< $(msg)"
 	@$(COMPILE.c) $(OUTPUT_OPTION) $<
-# yasm/nasm assembly files
+# nasm assembly files
 $(O)/%.o: %.asm
 	@echo "  ---> Building $< $(msg)"
 	@$(AS) $(ASFLAGS) -o $@ $<
 
 
-$(O)/%.o %.o: %.c
+$(O)/%.o: %.c
 	@echo "  ---> Building $< $(msg)"
 	@$(COMPILE.c) $(OUTPUT_OPTION) $<
 
@@ -286,13 +337,7 @@ isa-l_crypto.h:
 	@echo '#ifndef _ISAL_CRYPTO_H_'	>> $@
 	@echo '#define _ISAL_CRYPTO_H_'	>> $@
 	@echo ''			>> $@
-	@echo '#define.ISAL_CRYPTO_MAJOR_VERSION.${version}' |  ${AWK} -F . '{print $$1, $$2, $$3}' >> $@
-	@echo '#define.ISAL_CRYPTO_MINOR_VERSION.${version}' |  ${AWK} -F . '{print $$1, $$2, $$4}' >> $@
-	@echo '#define.ISAL_CRYPTO_PATCH_VERSION.${version}' |  ${AWK} -F . '{print $$1, $$2, $$5}' >> $@
-	@echo '#define ISAL_CRYPTO_MAKE_VERSION(maj, min, patch)  ((maj) * 0x10000 + (min) * 0x100 + (patch))' >> $@
-	@echo '#define ISAL_CRYPTO_VERSION ISAL_CRYPTO_MAKE_VERSION(ISAL_CRYPTO_MAJOR_VERSION, ISAL_CRYPTO_MINOR_VERSION, ISAL_CRYPTO_PATCH_VERSION)' >> $@
-	@echo ''			>> $@
-	@for unit in $(sort $(extern_hdrs)); do echo "#include <isa-l_crypto/$$unit>" | sed -e 's;include/;;' >> $@; done
+	@for unit in $(sort $(extern_hdrs)); do echo "#include <$$unit>" | sed -e 's;include/;;' >> $@; done
 	@echo '#endif //_ISAL_CRYPTO_H_'	>> $@
 
 
@@ -304,8 +349,7 @@ install: $(sort $(extern_hdrs)) | $(install_dirs) $(lib_name) $(so_lib_name) isa
 	install -m 644 $(lib_name) $(prefix)/lib/libisal_crypto.a
 	install -m 644 $^ $(prefix)/include/isa-l_crypto/.
 	install -m 664 isa-l_crypto.h $(prefix)/include/.
-	install -m 664 include/types.h $(prefix)/include/isa-l_crypto/.
-	install -m 664 include/endian_helper.h $(prefix)/include/isa-l_crypto/.
+	install -m 664 include/isa-l_crypto/types.h $(prefix)/include/isa-l_crypto/.
 	install -m 664 $(so_lib_name) $(prefix)/lib/$(so_lib_ver)
 	(cd $(prefix)/lib && ln -f -s $(so_lib_ver) $(soname) && ln -f -s $(so_lib_ver) $(so_lib_inst))
 ifeq ($(shell uname),Darwin)
@@ -359,5 +403,5 @@ CS_IGNORE_WORDS ?= iinclude,struc,fo,ue,od,ba,padd,hist,unx,sav,datas
 spellcheck:
 	$(CODESPELL) -d -L $(CS_IGNORE_WORDS) \
 	-S "*.obj,*.o,*.a,*.so,*.lib,*~,*.so,*.so.*,*.d" \
-	./aes ./examples/saturation_test ./include ./md5_mb ./mh_sha1 ./mh_sha1_murmur3_x86_128 ./mh_sha256 ./rolling_hash ./sha1_mb ./sha256_mb ./sha512_mb ./sm3_mb ./tests README.md SECURITY.md CONTRIBUTING.md \
+	./aes ./examples/saturation_test ./include ./md5_mb ./mh_sha1 ./mh_sha1_murmur3_x86_128 ./mh_sha256 ./rolling_hash ./sha1_mb ./sha256_mb ./sha512_mb ./sm3_mb ./tests ./fips ./misc README.md SECURITY.md CONTRIBUTING.md FIPS.md \
 	Makefile.unx Makefile.nmake Release_notes.txt LICENSE $(CS_EXTRA_OPTS)

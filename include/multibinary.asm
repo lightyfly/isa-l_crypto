@@ -30,29 +30,14 @@
 %ifndef _MULTIBINARY_ASM_
 %define _MULTIBINARY_ASM_
 
-%ifidn __OUTPUT_FORMAT__, elf32
- %define mbin_def_ptr	dd
- %define mbin_ptr_sz	dword
- %define mbin_rdi	edi
- %define mbin_rsi	esi
- %define mbin_rax	eax
- %define mbin_rbx	ebx
- %define mbin_rcx	ecx
- %define mbin_rdx	edx
-%else
- %define mbin_def_ptr	dq
- %define mbin_ptr_sz	qword
- %define mbin_rdi	rdi
- %define mbin_rsi	rsi
- %define mbin_rax	rax
- %define mbin_rbx	rbx
- %define mbin_rcx	rcx
- %define mbin_rdx	rdx
-%endif
-
-%ifndef AS_FEATURE_LEVEL
-%define AS_FEATURE_LEVEL 4
-%endif
+%define mbin_def_ptr	dq
+%define mbin_ptr_sz	qword
+%define mbin_rdi	rdi
+%define mbin_rsi	rsi
+%define mbin_rax	rax
+%define mbin_rbx	rbx
+%define mbin_rcx	rcx
+%define mbin_rdx	rdx
 
 ;;;;
 ; multibinary macro:
@@ -131,22 +116,6 @@
 %endmacro
 
 ;;;;;
-; mbin_dispatch_init2 parameters
-;  Cases where only base functions are available
-; 1-> function name
-; 2-> base function
-;;;;;
-%macro mbin_dispatch_init2 2
-	section .text
-	%1_dispatch_init:
-		push	mbin_rsi
-		lea	mbin_rsi, [%2 WRT_OPT] ; Default
-		mov	[%1_dispatched], mbin_rsi
-		pop	mbin_rsi
-		ret
-%endmacro
-
-;;;;;
 ; mbin_dispatch_init5 parameters
 ; 1-> function name
 ; 2-> base function
@@ -203,7 +172,6 @@
 		ret
 %endmacro
 
-%if AS_FEATURE_LEVEL >= 6
 ;;;;;
 ; mbin_dispatch_init6 parameters
 ; 1-> function name
@@ -273,13 +241,6 @@
 		ret
 %endmacro
 
-%else
-%macro mbin_dispatch_init6 6
-	mbin_dispatch_init5 %1, %2, %3, %4, %5
-%endmacro
-%endif
-
-%if AS_FEATURE_LEVEL >= 10
 ;;;;;
 ; mbin_dispatch_init7 parameters
 ; 1-> function name
@@ -354,11 +315,6 @@
 		pop	mbin_rsi
 		ret
 %endmacro
-%else
-%macro mbin_dispatch_init7 7
-	mbin_dispatch_init6 %1, %2, %3, %4, %5, %6
-%endmacro
-%endif
 
 ;;;;;
 ; mbin_dispatch_sse_to_avx2_shani parameters
@@ -478,18 +434,18 @@
 		;; Test for AVX512
 		and	edi, FLAG_XGETBV_EAX_ZMM_OPM
 		cmp	edi, FLAG_XGETBV_EAX_ZMM_OPM
-		jne	_%1_init_done	  ; No AVX512 possible
+		jne	_%1_shani_check	  ; No AVX512 possible
 		and	ebx, FLAGS_CPUID7_EBX_AVX512_G1
 		cmp	ebx, FLAGS_CPUID7_EBX_AVX512_G1
 		lea	mbin_rbx, [%6 WRT_OPT] ; AVX512/06 opt
 		cmove	mbin_rsi, mbin_rbx
 
-		;; Test for SHANI
+		;; Test for SHANI (AVX512 being supported too)
 		xor	ecx, ecx
 		mov	eax, 7
 		cpuid
 		test	ebx, FLAG_CPUID7_EBX_SHA
-		lea	mbin_rbx, [%8 WRT_OPT] ; SHANI opt sse func
+		lea	mbin_rbx, [%8 WRT_OPT] ; Combination of AVX512 and SHANI sse func
 		cmovne	mbin_rsi, mbin_rbx
 
 	_%1_init_done:
@@ -502,6 +458,7 @@
 		pop	mbin_rsi
 		ret
 
+		;; Test for SHANI (AVX512 is not supported here)
 	_%1_shani_check:
 		xor	ecx, ecx
 		mov	eax, 7

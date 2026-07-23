@@ -84,9 +84,9 @@
 
 /*
  * void mh_sha1_murmur3_block_asimd (const uint8_t * input_data,
- *                               uint32_t mh_sha1_digests[SHA1_DIGEST_WORDS][HASH_SEGS],
- *                               uint8_t frame_buffer[MH_SHA1_BLOCK_SIZE],
- *                               uint32_t murmur3_x64_128_digests[MURMUR3_x64_128_DIGEST_WORDS],
+ *                               uint32_t mh_sha1_digests[ISAL_SHA1_DIGEST_WORDS][ISAL_HASH_SEGS],
+ *                               uint8_t frame_buffer[ISAL_MH_SHA1_BLOCK_SIZE],
+ *                               uint32_t murmur3_x64_128_digests[ISAL_MURMUR3_x64_128_DIGEST_WORDS],
  *                               uint32_t num_blocks);
  * arg 0 pointer to input data
  * arg 1 pointer to digests, include segments digests(uint32_t digests[16][5])
@@ -134,13 +134,17 @@ mh_sha1_murmur3_block_asimd:
 	mov	mur_data, input_data
 	ldr	mur_hash1, [mur_digest]
 	ldr	mur_hash2, [mur_digest, 8]
-	adr	mur_c1, C1
+	adrp	mur_c1, C1
+	add	mur_c1, mur_c1, :lo12:C1
 	ldr	mur_c1, [mur_c1]
-	adr	mur_c2, C2
+	adrp	mur_c2, C2
+	add	mur_c2, mur_c2, :lo12:C2
 	ldr	mur_c2, [mur_c2]
-	adr	tmp, N1
+	adrp	tmp, N1
+	add	tmp, tmp, :lo12:N1
 	ldr	mur_n1_w, [tmp]
-	adr	tmp, N2
+	adrp	tmp, N2
+	add	tmp, tmp, :lo12:N2
 	ldr	mur_n2_w, [tmp]
 
 	mov	mh_segs, #0

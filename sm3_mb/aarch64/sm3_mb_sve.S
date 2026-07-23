@@ -70,7 +70,7 @@ sm3_mb_sve_max_lanes:
 	ret
 	.size sm3_mb_sve_max_lanes, .-sm3_mb_sve_max_lanes
 /*
- *  void sm3_mb_sve/sve2(int blocks, int total_lanes, SM3_JOB **job_vec)
+ *  void sm3_mb_sve/sve2(int blocks, int total_lanes, ISAL_SM3_JOB **job_vec)
  */
 	num_blocks	.req	w0
 	total_lanes	.req	w1
@@ -109,7 +109,8 @@ sm3_mb_sve_max_lanes:
 	lsl	tmp,lanes,6
 	sub	databuf,abcd_buf,tmp
 	mov	sp,databuf
-	adr	sm3const_adr,SM3_CONSTS
+	adrp	sm3const_adr,SM3_CONSTS
+	add	sm3const_adr,sm3const_adr,:lo12:SM3_CONSTS
 1:
 	mov	src,job_vec
 	mov	dst,abcd_buf

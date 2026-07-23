@@ -85,7 +85,7 @@ Temporary variables
 	declare_var_vector_reg	tmp_1,6
 
 /*
-	void sha1_mb_ce_x1(SHA1_JOB * job, int len);
+	void sha1_mb_ce_x1(ISAL_SHA1_JOB * job, int len);
 */
 /*
 Arguments list
@@ -100,7 +100,8 @@ sha1_mb_ce_x1:
 	ldr	data, [job]
 	ldr	abcd_q, [job, 64]
 	ldr	e0_s, [job, 80]
-	adr	tmp, KEY
+	adrp	tmp, KEY
+	add	tmp, tmp, :lo12:KEY
 	ld1	{key_0_v.4s-key_3_v.4s},[tmp]
 
 start_loop:

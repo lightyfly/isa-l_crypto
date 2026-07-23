@@ -1,5 +1,5 @@
 /**********************************************************************
-  Copyright(c) 2011-2016 Intel Corporation All rights reserved.
+  Copyright(c) 2011-2024 Intel Corporation All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions
@@ -29,91 +29,100 @@
 
 #include <stdlib.h>
 #include <stdio.h>
-#include "xts_128_vect.h"
+#include <string.h>
 
-int main(void)
+#include <aes_xts.h>
+#include "aes_128_xts_test.json.h"
+
+int
+main(void)
 {
 
-	// Temporary array for the calculated vectors
-	uint8_t *ct_test = NULL;
-	uint8_t *pt_test = NULL;
+        // Temporary array for the calculated vectors
+        uint8_t *ct_test = NULL;
+        uint8_t *pt_test = NULL;
 
-	int i, j, ret = -1;
+        size_t j;
+        int retval, ret = -1;
 
-	// --- Encryption test ---
+        const struct cipher_test *v = xts_128_test_json;
+        // --- Encryption test ---
 
-	// Loop over the vectors
-	for (i = 0; i < NVEC; i++) {
+        // Loop over the vectors
+        for (; v->msg != NULL; v++) {
+                const size_t buf_size = v->msgSize / 8;
 
-		// Allocate space for the calculated ciphertext
-		ct_test = malloc(vlist[i].ptlen);
-		if (ct_test == NULL) {
-			fprintf(stderr, "Can't allocate ciphertext memory\n");
-			goto end;
-		}
+                // Allocate space for the calculated ciphertext
+                ct_test = malloc(buf_size);
+                if (ct_test == NULL) {
+                        fprintf(stderr, "Can't allocate ciphertext memory\n");
+                        goto end;
+                }
 
-		XTS_AES_128_enc(vlist[i].key2, vlist[i].key1, vlist[i].TW,
-				vlist[i].ptlen, vlist[i].PTX, ct_test);
+                isal_aes_xts_enc_128((const uint8_t *) v->key + 16, (const uint8_t *) v->key,
+                                     (const uint8_t *) v->iv, buf_size, v->msg, ct_test);
 
-		// Carry out comparison of the calculated ciphertext with
-		// the reference
-		for (j = 0; j < vlist[i].ptlen; j++) {
+                // Carry out comparison of the calculated ciphertext with
+                // the reference
+                retval = memcmp(ct_test, v->ct, buf_size);
 
-			if (ct_test[j] != vlist[i].CTX[j]) {
-				// Vectors 1-10 and 15-19 are for the 128 bit code
-				printf("\nXTS_AES_128_enc: Vector %d: ",
-				       i < 9 ? i + 1 : i + 6);
+                if (retval != 0) {
+                        for (j = 0; j < buf_size; j++) {
+                                if (ct_test[j] != (const uint8_t) v->ct[j]) {
+                                        printf("\nXTS_AES_128_enc: Vector %zu: (size = %zu bytes) ",
+                                               v->tcId, buf_size);
+                                        printf("failed at byte %zu! \n", j);
+                                        goto end;
+                                }
+                        }
+                }
+                printf(".");
 
-				printf("failed at byte %d! \n", j);
-				goto end;
-			}
-		}
-		printf(".");
+                free(ct_test);
+                ct_test = NULL;
+        }
 
-		free(ct_test);
-		ct_test = NULL;
-	}
+        // --- Decryption test ---
 
-	// --- Decryption test ---
+        // Loop over the vectors
+        for (v = xts_128_test_json; v->msg != NULL; v++) {
+                const size_t buf_size = v->msgSize / 8;
 
-	// Loop over the vectors
-	for (i = 0; i < NVEC; i++) {
+                // Allocate space for the calculated ciphertext
+                pt_test = malloc(buf_size);
+                if (pt_test == NULL) {
+                        fprintf(stderr, "Can't allocate plaintext memory\n");
+                        goto end;
+                }
 
-		// Allocate space for the calculated ciphertext
-		pt_test = malloc(vlist[i].ptlen);
-		if (pt_test == NULL) {
-			fprintf(stderr, "Can't allocate plaintext memory\n");
-			goto end;
-		}
+                isal_aes_xts_dec_128((const uint8_t *) v->key + 16, (const uint8_t *) v->key,
+                                     (const uint8_t *) v->iv, buf_size, v->ct, pt_test);
 
-		XTS_AES_128_dec(vlist[i].key2, vlist[i].key1, vlist[i].TW,
-				vlist[i].ptlen, vlist[i].CTX, pt_test);
+                retval = memcmp(pt_test, v->msg, buf_size);
 
-		for (j = 0; j < vlist[i].ptlen; j++) {
+                if (retval != 0) {
+                        for (j = 0; j < buf_size; j++) {
+                                if (pt_test[j] != (const uint8_t) v->msg[j]) {
+                                        printf("\nXTS_AES_128_dec: Vector %zu: (size = %zu bytes) ",
+                                               v->tcId, buf_size);
+                                        printf("failed at byte %zu! \n", j);
+                                        goto end;
+                                }
+                        }
+                }
+                printf(".");
 
-			if (pt_test[j] != vlist[i].PTX[j]) {
-				// Carry out comparison of the calculated ciphertext with
-				// the reference
-				printf("\nXTS_AES_128_enc: Vector %d: ",
-				       i < 9 ? i + 1 : i + 6);
+                free(pt_test);
+                pt_test = NULL;
+        }
+        ret = 0;
+        printf("Pass\n");
 
-				printf(" failed at byte %d! \n", j);
-				goto end;
-			}
-		}
-		printf(".");
+end:
+        if (ct_test != NULL)
+                free(ct_test);
+        if (pt_test != NULL)
+                free(pt_test);
 
-		free(pt_test);
-		pt_test = NULL;
-	}
-	ret = 0;
-	printf("Pass\n");
-
-      end:
-	if (ct_test != NULL)
-		free(ct_test);
-	if (pt_test != NULL)
-		free(pt_test);
-
-	return ret;
+        return ret;
 }
